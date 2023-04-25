@@ -1,14 +1,18 @@
 import tkinter as tk
 from tkinter import messagebox, simpledialog
 import json
+import time
 import os
 
 paused = False
 after_id = None
+start_time = time.time()
+remaining_time = 0
+duration = 0
 
-# Define the reminder function
 def reminder():
-    global mode
+    global mode, start_time, duration
+    start_time = time.time()
     if mode == 'sit':
         stats['sit'] += sit_duration
         mode = 'stand'
@@ -22,22 +26,35 @@ def reminder():
         mode = 'sit'
         messagebox.showinfo('Time to sit', 'Please sit and press the button to confirm.')
     update_label()
+    start_next_mode()
+
+def start_next_mode():
+    global paused
+    paused = False
+    pause_button.config(text='Pause')
     schedule_next_reminder()
 
-# Update the label text
 def update_label():
     label.config(text=f'Current mode: {mode}')
 
-# Schedule the next reminder
 def schedule_next_reminder():
-    if mode == 'sit':
-        root.after(sit_duration * 60 * 1000, reminder)
-    elif mode == 'stand':
-        root.after(stand_duration * 60 * 1000, reminder)
-    else:
-        root.after(stretch_duration * 60 * 1000, reminder)
+    global after_id, start_time, remaining_time, duration
 
-# Reset the app
+    start_time = time.time()
+
+    if mode == 'sit':
+        duration = sit_duration
+    elif mode == 'stand':
+        duration = stand_duration
+    else:
+        duration = stretch_duration
+
+    if remaining_time == 0:
+        after_id = root.after(duration * 60 * 1000, reminder)
+    else:
+        after_id = root.after(remaining_time, reminder)
+        remaining_time = 0
+
 def reset_app():
     global mode, stats
     mode = 'sit'
@@ -45,17 +62,18 @@ def reset_app():
     update_label()
     schedule_next_reminder()
 
-# Pause the app
 def pause_app():
-    global paused, after_id
+    global paused, after_id, start_time, remaining_time, duration
     paused = not paused
     pause_button.config(text='Resume' if paused else 'Pause')
-    if paused and after_id is not None:
-        root.after_cancel(after_id)
-    else:
-        schedule_next_reminder()
 
-# Load stats from the previous day
+    if paused and after_id is not None:
+        elapsed_time = (time.time() - start_time) * 1000
+        remaining_time = int(duration * 60 * 1000 - elapsed_time)  # Convert to int
+        root.after_cancel(after_id)
+    elif not paused:
+        start_next_mode()
+
 def load_previous_stats():
     if os.path.exists('stats.json'):
         with open('stats.json', 'r') as f:
@@ -66,28 +84,22 @@ def load_previous_stats():
             json.dump(default_stats, f)
         return default_stats
 
-
-# Save stats at the end of the day
 def save_stats():
     with open('stats.json', 'w') as f:
         json.dump(stats, f)
 
-# Create the main window
 root = tk.Tk()
 root.title('Sit-Stand-Stretch Reminder')
 
-# Initialize the mode and durations
 mode = 'sit'
 sit_duration = simpledialog.askinteger('Sit duration', 'How long do you want to sit (minutes)?', initialvalue=30)
 stand_duration = simpledialog.askinteger('Stand duration', 'How long do you want to stand (minutes)?', initialvalue=30)
 stretch_duration = simpledialog.askinteger('Stretch duration', 'How long do you want to stretch (minutes)?', initialvalue=5)
 
-# Initialize the stats
 stats = {'sit': 0, 'stand': 0, 'stretch': 0}
 prev_stats = load_previous_stats()
 messagebox.showinfo('Previous stats', f"Yesterday's stats:\nSit: {prev_stats['sit']} minutes\nStand: {prev_stats['stand']} minutes\nStretch: {prev_stats['stretch']} minutes")
 
-# Create the label and buttons
 label = tk.Label(root, text=f'Current mode: {mode}')
 label.pack(pady=10)
 
@@ -100,7 +112,6 @@ pause_button.pack(pady=10)
 reset_button = tk.Button(root, text='Reset', command=reset_app)
 reset_button.pack(pady=10)
 
-# Start the app
 root.protocol("WM_DELETE_WINDOW", save_stats)
 schedule_next_reminder()
 root.mainloop()
